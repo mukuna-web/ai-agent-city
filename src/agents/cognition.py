@@ -29,9 +29,12 @@ class AgentCognition:
 
     Tier 0 (Reactive): Every tick, <0.01ms. Pure threshold checks.
     Tier 1 (Deliberative): Every 10 ticks. Goal evaluation and plan selection.
-    Tier 2 (Strategic): Every 100 ticks. Would use local 1-3B model.
+    Tier 2 (Strategic): Every 100 ticks. Uses learning system Q-values.
     Tier 3 (Creative): On-demand. Would use full LLM for novel situations.
     """
+
+    def __init__(self, learning_system=None):
+        self._learning_system = learning_system
 
     def tick(self, agent: Agent, tick: int) -> list[Action]:
         """Main decision loop called every simulation tick.
@@ -87,12 +90,23 @@ class AgentCognition:
         pass
 
     def _strategize(self, agent: Agent, tick: int) -> None:
-        """Would use local model for medium-term reasoning.
+        """Strategic decision-making informed by learning system.
 
-        Placeholder -- in production this calls a local 1-3B parameter model
-        for batch inference across agents needing strategic decisions.
+        Uses the agent's Q-table (via learning system) to evaluate
+        medium-term action choices. Falls back to heuristics if no
+        learning data is available.
         """
-        pass
+        # Learning-informed strategy is handled by the LearningSystem
+        # which sets agent.goals.immediate based on Q-values.
+        # This method can layer additional strategic reasoning on top.
+        if self._learning_system is not None:
+            stats = self._learning_system.get_agent_stats(agent.identity.agent_id)
+            if stats and stats["q_table_size"] > 10:
+                # Agent has enough experience — reduce exploration
+                learner = self._learning_system.learners.get(agent.identity.agent_id)
+                if learner and learner.epsilon > 0.05:
+                    # Strategic agents exploit more, explore less
+                    learner.epsilon = max(0.05, learner.epsilon * 0.95)
 
     def _execute_plan(self, agent: Agent, tick: int) -> list[Action]:
         """Execute current step of the active plan.

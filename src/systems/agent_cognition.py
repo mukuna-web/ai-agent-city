@@ -14,11 +14,18 @@ class AgentCognitionSystem:
     Frequency: 1 (every tick), but internal tiers run at different rates.
     """
 
+    def __init__(self, learning_system=None):
+        self._learning_system = learning_system
+
     def update(self, world: "WorldState", tick: int, event_bus: "EventBus") -> None:
         from ..agents.cognition import AgentCognition, Action
         from ..engine.event_bus import Event
 
-        cognition = AgentCognition()
+        cognition = AgentCognition(learning_system=self._learning_system)
+
+        # Capture pre-action snapshots for learning
+        if self._learning_system is not None:
+            self._learning_system.capture_snapshots(world)
 
         for agent_id, agent in list(world.agents.items()):
             if not agent.biology.is_alive:

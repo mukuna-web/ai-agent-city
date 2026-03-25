@@ -16,3 +16,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 node_modules/
+simulation_result.json
+tick_log.json
