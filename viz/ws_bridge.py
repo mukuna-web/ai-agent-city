@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import websockets
 import yaml
+from aiohttp import web
 
 from engine.engine import SimulationEngine
 
@@ -266,13 +267,76 @@ class DeltaSimulationServer:
             delay = 1.0 / self.speed if self.speed > 0 else 1.0
             await asyncio.sleep(delay)
 
-    async def start(self, host: str = "0.0.0.0", port: int = 8765):
-        print(f"AI Agent City — Delta WebSocket Server")
-        print(f"Listening on ws://{host}:{port}")
-        print(f"Protocol: delta updates (only changed agents per tick)")
-        print(f"Commands: play, pause, step, speed, reset, get_agent, get_state")
+    # --- REST API handlers ---
 
-        async with websockets.serve(self.handle_client, host, port):
+    async def handle_rest_agent(self, request: web.Request) -> web.Response:
+        """GET /agent/:id — returns agent detail + learning stats."""
+        agent_id = request.match_info["agent_id"]
+        agent = self.engine.agents.get(agent_id)
+        if not agent:
+            return web.json_response({"error": "agent not found"}, status=404)
+        learner = self.engine.learners.get(agent_id)
+        return web.json_response({
+            "agent": agent.summary(),
+            "learning": learner.get_stats() if learner else None,
+        })
+
+    async def handle_rest_agents(self, request: web.Request) -> web.Response:
+        """GET /agents — returns list of all agent summaries."""
+        agents = [a.summary() for a in self.engine.agents.values()]
+        return web.json_response({"agents": agents, "count": len(agents)})
+
+    async def handle_rest_state(self, request: web.Request) -> web.Response:
+        """GET /state — returns full simulation state."""
+        return web.json_response(self.engine.get_state(), default=str)
+
+    async def handle_rest_metrics(self, request: web.Request) -> web.Response:
+        """GET /metrics — returns current city metrics + learning stats."""
+        return web.json_response({
+            "metrics": self._compute_metrics(),
+            "learning": self._compute_learning_stats(),
+            "tick": self.engine.clock.tick,
+            "day": self.engine.clock.day,
+        })
+
+    def _create_rest_app(self) -> web.Application:
+        app = web.Application()
+        app.router.add_get("/agent/{agent_id}", self.handle_rest_agent)
+        app.router.add_get("/agents", self.handle_rest_agents)
+        app.router.add_get("/state", self.handle_rest_state)
+        app.router.add_get("/metrics", self.handle_rest_metrics)
+
+        # CORS middleware for Three.js frontend
+        @web.middleware
+        async def cors_middleware(request, handler):
+            if request.method == "OPTIONS":
+                response = web.Response()
+            else:
+                response = await handler(request)
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return response
+
+        app.middlewares.append(cors_middleware)
+        return app
+
+    async def start(self, host: str = "0.0.0.0", ws_port: int = 8765, rest_port: int = 8766):
+        print(f"AI Agent City — Delta WebSocket + REST Server")
+        print(f"WebSocket: ws://{host}:{ws_port}")
+        print(f"REST API:  http://{host}:{rest_port}")
+        print(f"  GET /agent/:id  — agent detail + learning stats")
+        print(f"  GET /agents     — all agent summaries")
+        print(f"  GET /state      — full simulation state")
+        print(f"  GET /metrics    — city metrics + learning stats")
+
+        rest_app = self._create_rest_app()
+        runner = web.AppRunner(rest_app)
+        await runner.setup()
+        site = web.TCPSite(runner, host, rest_port)
+        await site.start()
+
+        async with websockets.serve(self.handle_client, host, ws_port):
             await self.simulation_loop()
 
 
