@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Agent City — Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Courier New', monospace; background: #0a0a1a; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
+
+#sidebar { width: 320px; background: #111128; padding: 16px; overflow-y: auto; border-right: 1px solid #333; }
+#main { flex: 1; display: flex; flex-direction: column; }
+#controls { padding: 10px 16px; background: #111128; border-bottom: 1px solid #333; display: flex; gap: 10px; align-items: center; }
+#canvas-container { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; cursor: crosshair; }
+#info-panel { width: 300px; background: #111128; padding: 16px; overflow-y: auto; border-left: 1px solid #333; }
+
+button { background: #2a2a4a; color: #e0e0e0; border: 1px solid #555; padding: 6px 14px; cursor: pointer; font-family: inherit; border-radius: 4px; }
+button:hover { background: #3a3a6a; }
+button.active { background: #4a4a8a; border-color: #88f; }
+
+.section { margin-bottom: 16px; }
+.section h3 { color: #88aaff; font-size: 13px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.stat { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+.stat-label { color: #888; }
+.stat-value { color: #fff; font-weight: bold; }
+
+.agent-card { background: #1a1a3a; padding: 8px; margin-bottom: 6px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+.agent-card:hover { border-color: #88aaff; }
+.agent-card.selected { border-color: #ffaa44; }
+.agent-name { font-weight: bold; color: #88aaff; }
+.agent-detail { font-size: 11px; color: #888; }
+
+.skill-bar { display: flex; align-items: center; margin: 3px 0; font-size: 11px; }
+.skill-bar .label { width: 80px; color: #888; }
+.skill-bar .bar-bg { flex: 1; height: 10px; background: #1a1a3a; border-radius: 3px; overflow: hidden; }
+.skill-bar .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+.event-item { padding: 4px 8px; margin: 3px 0; background: #2a1a1a; border-left: 3px solid #ff6644; border-radius: 2px; font-size: 11px; }
+
+#chart-container { height: 120px; padding: 10px 16px; background: #0d0d20; border-top: 1px solid #333; }
+#chart-canvas { width: 100%; height: 100%; }
+
+.speed-control { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.speed-control input { width: 80px; }
+
+#status { font-size: 12px; color: #888; }
+
+.legend { display: flex; gap: 12px; font-size: 11px; flex-wrap: wrap; margin-top: 8px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-color { width: 12px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2 style="color:#88aaff; margin-bottom:12px;">AI Agent City</h2>
+
+  <div class="section">
+    <h3>World Stats</h3>
+    <div class="stat"><span class="stat-label">Tick</span><span class="stat-value" id="s-tick">0</span></div>
+    <div class="stat"><span class="stat-label">Day</span><span class="stat-value" id="s-day">0</span></div>
+    <div class="stat"><span class="stat-label">Time</span><span class="stat-value" id="s-time">-</span></div>
+    <div class="stat"><span class="stat-label">Agents Alive</span><span class="stat-value" id="s-alive">0</span></div>
+    <div class="stat"><span class="stat-label">Resources</span><span class="stat-value" id="s-resources">0</span></div>
+    <div class="stat"><span class="stat-label">Avg Reward</span><span class="stat-value" id="s-reward">0</span></div>
+    <div class="stat"><span class="stat-label">Avg Epsilon</span><span class="stat-value" id="s-epsilon">-</span></div>
+  </div>
+
+  <div class="section">
+    <h3>Active Events</h3>
+    <div id="events-list"><span style="color:#555;font-size:12px;">None</span></div>
+  </div>
+
+  <div class="section">
+    <h3>Top Agents</h3>
+    <div id="leaderboard"></div>
+  </div>
+
+  <div class="section">
+    <h3>Legend</h3>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-color" style="background:#3a5a2a;"></div>Ground</div>
+      <div class="legend-item"><div class="legend-color" style="background:#1a3a6a;"></div>Water</div>
+      <div class="legend-item"><div class="legend-color" style="background:#1a4a1a;"></div>Forest</div>
+      <div class="legend-item"><div class="legend-color" style="background:#5a5a5a;"></div>Mountain</div>
+      <div class="legend-item"><div class="legend-color" style="background:#4a4a3a;"></div>Road</div>
+      <div class="legend-item"><div class="legend-color" style="background:#ffaa44;"></div>Agent</div>
+      <div class="legend-item"><div class="legend-color" style="background:#44ff88;"></div>Resource</div>
+      <div class="legend-item"><div class="legend-color" style="background:#ff4488;"></div>Building</div>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="controls">
+    <button id="btn-play" onclick="send('play')">Play</button>
+    <button id="btn-pause" onclick="send('pause')">Pause</button>
+    <button id="btn-step" onclick="send('step')">Step</button>
+    <button id="btn-reset" onclick="send('reset')">Reset</button>
+    <div class="speed-control">
+      <label>Speed:</label>
+      <input type="range" id="speed-slider" min="0.5" max="30" step="0.5" value="5"
+             oninput="send('speed', {value: parseFloat(this.value)}); document.getElementById('speed-val').textContent=this.value+'x'">
+      <span id="speed-val">5x</span>
+    </div>
+    <span id="status">Disconnected</span>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="grid-canvas"></canvas>
+  </div>
+
+  <div id="chart-container">
+    <canvas id="chart-canvas"></canvas>
+  </div>
+</div>
+
+<div id="info-panel">
+  <h3 style="color:#88aaff;margin-bottom:12px;">Agent Inspector</h3>
+  <div id="agent-info"><span style="color:#555;font-size:12px;">Click an agent on the map</span></div>
+</div>
+
+<script>
+const TERRAIN_COLORS = {
+  ground: '#2a3a2a', water: '#1a2a4a', forest: '#1a3a1a',
+  mountain: '#3a3a3a', road: '#3a3a2a'
+};
+const TERRAIN_COLORS_NIGHT = {
+  ground: '#151a15', water: '#0a1525', forest: '#0a1a0a',
+  mountain: '#1a1a1a', road: '#1a1a15'
+};
+
+let ws, worldConfig, worldData, state, selectedAgent = null;
+let rewardHistory = [], aliveHistory = [];
+const MAX_HISTORY = 200;
+
+function connect() {
+  ws = new WebSocket('ws://localhost:8765');
+  ws.onopen = () => { document.getElementById('status').textContent = 'Connected'; document.getElementById('status').style.color = '#4f4'; };
+  ws.onclose = () => { document.getElementById('status').textContent = 'Disconnected'; document.getElementById('status').style.color = '#f44'; setTimeout(connect, 2000); };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'init') {
+      worldConfig = msg.config;
+      worldData = msg.world;
+      state = msg.state;
+      rewardHistory = []; aliveHistory = [];
+      render();
+    } else if (msg.type === 'tick') {
+      worldData = msg.world;
+      state = msg.state;
+      const agents = Object.values(state.agents);
+      const alive = agents.filter(a => a.energy > 0).length;
+      const avgReward = agents.reduce((s, a) => s + a.total_reward, 0) / Math.max(agents.length, 1);
+      rewardHistory.push(avgReward);
+      aliveHistory.push(alive);
+      if (rewardHistory.length > MAX_HISTORY) { rewardHistory.shift(); aliveHistory.shift(); }
+      render();
+    }
+  };
+}
+
+function send(cmd, extra = {}) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({command: cmd, ...extra}));
+}
+
+function render() {
+  if (!state || !worldConfig) return;
+  renderGrid();
+  renderStats();
+  renderLeaderboard();
+  renderEvents();
+  renderChart();
+  if (selectedAgent) renderAgentInfo(selectedAgent);
+}
+
+function renderGrid() {
+  const canvas = document.getElementById('grid-canvas');
+  const container = document.getElementById('canvas-container');
+  const W = worldConfig.width, H = worldConfig.height;
+  const cellSize = Math.min(Math.floor(container.clientWidth / W), Math.floor(container.clientHeight / H));
+  canvas.width = W * cellSize;
+  canvas.height = H * cellSize;
+  const ctx = canvas.getContext('2d');
+
+  const isNight = state.clock && state.clock.includes('night');
+  const colors = isNight ? TERRAIN_COLORS_NIGHT : TERRAIN_COLORS;
+
+  // Draw tiles
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      const key = x + ',' + y;
+      const tile = worldData.tiles[key];
+      ctx.fillStyle = tile ? (colors[tile.terrain] || colors.ground) : colors.ground;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+      if (tile && tile.resources && tile.resources.length > 0) {
+        ctx.fillStyle = 'rgba(68, 255, 136, 0.3)';
+        ctx.fillRect(x * cellSize + 1, y * cellSize + 1, cellSize - 2, cellSize - 2);
+      }
+
+      if (tile && tile.building) {
+        ctx.fillStyle = 'rgba(255, 68, 136, 0.5)';
+        ctx.fillRect(x * cellSize + 2, y * cellSize + 2, cellSize - 4, cellSize - 4);
+      }
+    }
+  }
+
+  // Draw agents
+  const agents = Object.values(state.agents);
+  agents.forEach(agent => {
+    if (agent.energy <= 0) return;
+    const [ax, ay] = agent.position;
+    const cx = ax * cellSize + cellSize / 2;
+    const cy = ay * cellSize + cellSize / 2;
+    const r = Math.max(3, cellSize / 3);
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = selectedAgent === agent.id ? '#ff4444' : '#ffaa44';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (cellSize > 8) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `${Math.max(8, cellSize / 3)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(agent.name[0], cx, cy + r + Math.max(8, cellSize / 3));
+    }
+  });
+
+  // Grid lines
+  if (cellSize > 4) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= W; x++) {
+      ctx.beginPath(); ctx.moveTo(x * cellSize, 0); ctx.lineTo(x * cellSize, H * cellSize); ctx.stroke();
+    }
+    for (let y = 0; y <= H; y++) {
+      ctx.beginPath(); ctx.moveTo(0, y * cellSize); ctx.lineTo(W * cellSize, y * cellSize); ctx.stroke();
+    }
+  }
+
+  // Click handler
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = Math.floor((e.clientX - rect.left) / cellSize);
+    const my = Math.floor((e.clientY - rect.top) / cellSize);
+    const clicked = agents.find(a => a.position[0] === mx && a.position[1] === my && a.energy > 0);
+    selectedAgent = clicked ? clicked.id : null;
+    render();
+  };
+}
+
+function renderStats() {
+  const agents = Object.values(state.agents);
+  const alive = agents.filter(a => a.energy > 0).length;
+  const avgReward = (agents.reduce((s, a) => s + a.total_reward, 0) / Math.max(agents.length, 1)).toFixed(1);
+  document.getElementById('s-tick').textContent = state.tick;
+  const clockStr = state.clock || '';
+  const dayMatch = clockStr.match(/Day (\d+)/);
+  document.getElementById('s-day').textContent = dayMatch ? dayMatch[1] : '-';
+  document.getElementById('s-time').textContent = clockStr;
+  document.getElementById('s-alive').textContent = alive + '/' + agents.length;
+  document.getElementById('s-resources').textContent = state.world_stats?.total_resources || 0;
+  document.getElementById('s-reward').textContent = avgReward;
+  document.getElementById('s-epsilon').textContent = state.learning?.avg_epsilon?.toFixed(4) || '-';
+}
+
+function renderLeaderboard() {
+  const agents = Object.values(state.agents).sort((a, b) => b.total_reward - a.total_reward).slice(0, 5);
+  const html = agents.map((a, i) =>
+    `<div class="agent-card ${selectedAgent === a.id ? 'selected' : ''}" onclick="selectedAgent='${a.id}';render();">
+      <div class="agent-name">${i + 1}. ${a.name}</div>
+      <div class="agent-detail">Reward: ${a.total_reward.toFixed(1)} | Energy: ${a.energy.toFixed(0)} | Coins: ${a.coins}</div>
+    </div>`
+  ).join('');
+  document.getElementById('leaderboard').innerHTML = html;
+}
+
+function renderEvents() {
+  const events = state.active_events || [];
+  if (events.length === 0) {
+    document.getElementById('events-list').innerHTML = '<span style="color:#555;font-size:12px;">None</span>';
+  } else {
+    document.getElementById('events-list').innerHTML = events.map(e =>
+      `<div class="event-item"><strong>${e.name}</strong> (${e.type})</div>`
+    ).join('');
+  }
+}
+
+function renderAgentInfo(agentId) {
+  const agent = state.agents[agentId];
+  if (!agent) {
+    document.getElementById('agent-info').innerHTML = '<span style="color:#555;">Agent not found</span>';
+    return;
+  }
+  const skills = agent.skills || {};
+  const skillColors = { foraging: '#4a4', crafting: '#a84', trading: '#48a', building: '#a44', socializing: '#84a' };
+  const skillBars = Object.entries(skills).map(([k, v]) =>
+    `<div class="skill-bar">
+      <span class="label">${k}</span>
+      <div class="bar-bg"><div class="bar-fill" style="width:${v * 100}%;background:${skillColors[k] || '#888'}"></div></div>
+      <span style="width:40px;text-align:right;font-size:10px;">${(v * 100).toFixed(0)}%</span>
+    </div>`
+  ).join('');
+
+  const inv = agent.inventory || {};
+  const invStr = Object.entries(inv).map(([k, v]) => `${k}: ${v}`).join(', ') || 'empty';
+
+  document.getElementById('agent-info').innerHTML = `
+    <div class="agent-card selected">
+      <div class="agent-name" style="font-size:16px;">${agent.name}</div>
+      <div class="agent-detail">ID: ${agent.id}</div>
+    </div>
+    <div class="section">
+      <div class="stat"><span class="stat-label">Position</span><span class="stat-value">(${agent.position[0]}, ${agent.position[1]})</span></div>
+      <div class="stat"><span class="stat-label">State</span><span class="stat-value">${agent.state}</span></div>
+      <div class="stat"><span class="stat-label">Energy</span><span class="stat-value">${agent.energy.toFixed(1)}</span></div>
+      <div class="stat"><span class="stat-label">Mood</span><span class="stat-value">${agent.mood.toFixed(2)}</span></div>
+      <div class="stat"><span class="stat-label">Coins</span><span class="stat-value">${agent.coins}</span></div>
+      <div class="stat"><span class="stat-label">Reward</span><span class="stat-value">${agent.total_reward.toFixed(1)}</span></div>
+      <div class="stat"><span class="stat-label">Age</span><span class="stat-value">${agent.age} ticks</span></div>
+    </div>
+    <div class="section">
+      <h3>Skills</h3>
+      ${skillBars}
+    </div>
+    <div class="section">
+      <h3>Inventory</h3>
+      <div style="font-size:12px;">${invStr}</div>
+    </div>
+  `;
+}
+
+function renderChart() {
+  const canvas = document.getElementById('chart-canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (rewardHistory.length < 2) return;
+
+  // Draw reward line
+  const maxReward = Math.max(1, ...rewardHistory);
+  ctx.strokeStyle = '#ffaa44';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < rewardHistory.length; i++) {
+    const x = (i / (rewardHistory.length - 1)) * W;
+    const y = H - (rewardHistory[i] / maxReward) * (H - 20) - 10;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Draw alive line
+  const maxAlive = Math.max(1, ...aliveHistory);
+  ctx.strokeStyle = '#44ff88';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < aliveHistory.length; i++) {
+    const x = (i / (aliveHistory.length - 1)) * W;
+    const y = H - (aliveHistory[i] / maxAlive) * (H - 20) - 10;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#ffaa44';
+  ctx.font = '10px monospace';
+  ctx.fillText(`Avg Reward: ${rewardHistory[rewardHistory.length-1]?.toFixed(1)}`, 10, 12);
+  ctx.fillStyle = '#44ff88';
+  ctx.fillText(`Alive: ${aliveHistory[aliveHistory.length-1]}`, 200, 12);
+}
+
+connect();
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>
