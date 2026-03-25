@@ -86,17 +86,19 @@ class DeltaSimulationServer:
 
     async def register(self, ws):
         self.clients.add(ws)
+        # Send initial data in the format the frontend expects
         await ws.send(json.dumps({
-            "type": "init",
-            "config": {
-                "width": self.config["world"]["width"],
-                "height": self.config["world"]["height"],
-                "agent_count": self.config["agents"]["count"],
-                "ticks_per_day": self.config["clock"]["ticks_per_day"],
-            },
-            "state": self._full_state(),
-            "world": self._serialize_world(),
-        }))
+            "type": "agents",
+            "agents": self._serialize_agents(),
+        }, default=str))
+        await ws.send(json.dumps({
+            "type": "buildings",
+            "buildings": self._serialize_buildings(),
+        }, default=str))
+        await ws.send(json.dumps({
+            "type": "metrics",
+            **self._serialize_metrics(),
+        }, default=str))
 
     async def unregister(self, ws):
         self.clients.discard(ws)
@@ -109,6 +111,57 @@ class DeltaSimulationServer:
             *[c.send(data) for c in self.clients],
             return_exceptions=True,
         )
+
+    def _serialize_agents(self) -> list[dict]:
+        """Serialize agents in the format the frontend expects."""
+        agents = []
+        for aid, agent in self.engine.agents.items():
+            summary = agent.summary()
+            agents.append({
+                "id": aid,
+                "x": summary["position"][0],
+                "y": summary["position"][1],
+                "profession": "worker",
+                "action": summary["state"],
+                "health": summary["energy"] / 100.0,
+                "name": summary["name"],
+                "age": summary["age"],
+                "needs": {"energy": summary["energy"] / 100.0, "mood": summary["mood"]},
+                "personality": {},
+                "goal": summary["state"],
+            })
+        return agents
+
+    def _serialize_buildings(self) -> list[dict]:
+        """Serialize buildings in the format the frontend expects."""
+        buildings = []
+        for (x, y), tile in self.engine.world.tiles.items():
+            if tile.building:
+                buildings.append({
+                    "id": f"bldg-{x}-{y}",
+                    "x": x,
+                    "y": y,
+                    "type": tile.building.type.name,
+                    "progress": 1.0,
+                    "operational": True,
+                })
+        return buildings
+
+    def _serialize_metrics(self) -> dict:
+        """Serialize metrics in the format the frontend expects."""
+        agents = list(self.engine.agents.values())
+        alive = [a for a in agents if a.is_alive]
+        population = len(alive)
+        total_coins = sum(a.coins for a in alive) if alive else 0
+        return {
+            "population": population,
+            "gdp": total_coins,
+            "unemployment": 0.0,
+            "avg_wage": 10,
+            "gini": 0.0,
+            "tick": self.engine.clock.tick,
+            "season": "spring",
+        }
 
     def _full_state(self) -> dict:
         state = self.engine.get_state()
@@ -170,34 +223,55 @@ class DeltaSimulationServer:
             "total_updates": sum(l.total_updates for l in learners.values()),
         }
 
-    def _tick_and_collect(self) -> dict:
-        """Run one tick and collect delta update."""
+    def _tick_and_collect(self) -> list[dict]:
+        """Run one tick and collect messages in frontend format."""
         self.engine.tick()
 
-        agent_deltas = self.tracker.compute_deltas(self.engine.agents)
         tick = self.engine.clock.tick
-        time_of_day = self.engine.clock.hour / self.config["clock"]["ticks_per_day"]
+        metrics = self._serialize_metrics()
 
-        # Collect events from tick log
-        events = []
-        if self.engine.tick_log:
-            last_log = self.engine.tick_log[-1]
-            events.append({
-                "type": "tick_summary",
-                "tick": last_log["tick"],
-                "data": last_log,
-            })
+        messages = []
 
-        return {
+        # Tick update
+        messages.append({
             "type": "tick",
             "tick": tick,
-            "day": self.engine.clock.day,
-            "time_of_day": round(time_of_day, 2),
-            "agent_deltas": agent_deltas,
-            "events": events,
-            "metrics": self._compute_metrics(),
-            "learning": self._compute_learning_stats(),
-        }
+            "season": "spring",
+            "population": metrics["population"],
+            "gdp": metrics["gdp"],
+        })
+
+        # Full agent list (frontend replaces all agents each tick)
+        messages.append({
+            "type": "agents",
+            "agents": self._serialize_agents(),
+        })
+
+        # Buildings (send every 10 ticks since they rarely change)
+        if tick % 10 == 0:
+            messages.append({
+                "type": "buildings",
+                "buildings": self._serialize_buildings(),
+            })
+
+        # Metrics
+        if tick % 5 == 0:
+            messages.append({
+                "type": "metrics",
+                **metrics,
+            })
+
+        # Events from tick log
+        if self.engine.tick_log:
+            last_log = self.engine.tick_log[-1]
+            messages.append({
+                "type": "event",
+                "event_type": "tick",
+                "description": f"Day {last_log['day']}, {last_log['alive_agents']} alive, avg energy {last_log['avg_energy']}",
+                "tick": tick,
+            })
+
+        return messages
 
     async def handle_client(self, ws):
         await self.register(ws)
@@ -215,8 +289,8 @@ class DeltaSimulationServer:
                     await ws.send(json.dumps({"type": "status", "paused": True}))
 
                 elif cmd == "step":
-                    update = self._tick_and_collect()
-                    await self.broadcast(update)
+                    for msg in self._tick_and_collect():
+                        await self.broadcast(msg)
 
                 elif cmd == "speed":
                     self.speed = max(0.1, min(100, data.get("value", 1.0)))
@@ -262,8 +336,8 @@ class DeltaSimulationServer:
     async def simulation_loop(self):
         while True:
             if not self.paused and self.clients:
-                update = self._tick_and_collect()
-                await self.broadcast(update)
+                for msg in self._tick_and_collect():
+                    await self.broadcast(msg)
             delay = 1.0 / self.speed if self.speed > 0 else 1.0
             await asyncio.sleep(delay)
 
