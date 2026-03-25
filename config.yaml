@@ -1,0 +1,76 @@
+world:
+  width: 50
+  height: 50
+  seed: 42
+
+clock:
+  ticks_per_day: 24
+  max_ticks: 1000
+
+agents:
+  count: 20
+  action_points_per_tick: 5
+  perception_radius: 3
+  starting_energy: 100
+  starting_coins: 50
+
+resources:
+  types:
+    - name: food
+      regen_rate: 0.05
+      max_per_tile: 3
+    - name: wood
+      regen_rate: 0.02
+      max_per_tile: 2
+    - name: stone
+      regen_rate: 0.01
+      max_per_tile: 1
+    - name: tools
+      regen_rate: 0.0
+      max_per_tile: 0
+    - name: luxury
+      regen_rate: 0.0
+      max_per_tile: 0
+
+buildings:
+  types:
+    - name: farm
+      cost: {wood: 5, stone: 2}
+      jobs: 3
+      produces: food
+    - name: workshop
+      cost: {wood: 3, stone: 5}
+      jobs: 2
+      produces: tools
+    - name: market
+      cost: {wood: 8, stone: 8}
+      jobs: 4
+      produces: null
+    - name: library
+      cost: {wood: 4, stone: 3}
+      jobs: 2
+      produces: null
+
+learning:
+  learning_rate: 0.1
+  discount_factor: 0.95
+  epsilon_start: 0.3
+  epsilon_decay: 0.995
+  epsilon_min: 0.01
+
+skills:
+  - foraging
+  - crafting
+  - trading
+  - building
+  - socializing
+
+economy:
+  starting_prices:
+    food: 5
+    wood: 8
+    stone: 12
+    tools: 20
+    luxury: 30
+  wage_base: 10
+  price_elasticity: 0.1
