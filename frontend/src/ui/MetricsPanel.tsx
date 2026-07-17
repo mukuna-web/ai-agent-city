@@ -23,19 +23,34 @@ export function MetricsPanel() {
 
   return (
     <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 w-[900px] max-w-[95vw]">
-      <div className="glass-card p-4">
+        <div className="glass-card p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs uppercase tracking-widest text-white/50 font-semibold">
             Economic Dashboard
           </h3>
-          <div className="flex gap-4">
+          <div className="flex items-center gap-4">
             <QuickStat label="GDP" value={`$${formatNumber(metrics.gdp)}`} color="text-emerald-400" />
             <QuickStat
               label="Unemploy"
               value={`${(metrics.unemployment * 100).toFixed(1)}%`}
               color="text-rose-400"
             />
+            <button
+              type="button"
+              onClick={() => downloadMetricsCsv(metricsHistory)}
+              disabled={metricsHistory.length === 0}
+              className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/60 disabled:opacity-30"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/60"
+            >
+              Print / PDF
+            </button>
             <QuickStat label="Gini" value={metrics.gini.toFixed(3)} color="text-amber-400" />
             <QuickStat
               label="Avg Wage"
@@ -60,6 +75,33 @@ export function MetricsPanel() {
       </div>
     </div>
   );
+}
+
+function downloadMetricsCsv(history: MetricsData[]) {
+  if (history.length === 0) return;
+  const fields: (keyof MetricsData)[] = [
+    'tick',
+    'population',
+    'gdp',
+    'unemployment',
+    'avgWage',
+    'gini',
+    'season',
+  ];
+  const escapeCell = (value: unknown) => {
+    const text = String(value ?? '');
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const csv = [
+    fields.join(','),
+    ...history.map((row) => fields.map((field) => escapeCell(row[field])).join(',')),
+  ].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'ai-agent-city-metrics.csv';
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 interface ChartCardProps {

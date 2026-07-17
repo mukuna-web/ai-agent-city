@@ -18,3 +18,6 @@ Thumbs.db
 node_modules/
 simulation_result.json
 tick_log.json
+simulation_metrics.csv
+analysis_report.json
+review_metrics.json

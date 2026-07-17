@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from engine.engine import SimulationEngine
+from reporting import analyze_tick_history, export_tick_history_csv
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -97,6 +98,22 @@ def main():
     with open(log_path, "w") as f:
         json.dump(engine.tick_log, f, indent=2)
     print(f"  Tick log saved to {log_path}")
+
+    csv_path = "simulation_metrics.csv"
+    with open(csv_path, "w", newline="") as f:
+        export_tick_history_csv(engine.tick_log, f)
+    print(f"  Aggregate CSV saved to {csv_path}")
+
+    analysis = analyze_tick_history(engine.tick_log)
+    analysis_path = "analysis_report.json"
+    with open(analysis_path, "w") as f:
+        json.dump(analysis, f, indent=2)
+    print(
+        f"  Analysis saved to {analysis_path} "
+        f"(status={analysis['status']}, review={analysis['review_status']})"
+    )
+    if analysis["status"] == "ready":
+        print("  Review locally with: uv run agent-city-review --help")
 
 
 if __name__ == "__main__":
